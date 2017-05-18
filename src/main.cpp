@@ -33,7 +33,11 @@ int main()
   uWS::Hub h;
 
   PID pid;
+
   // TODO: Initialize the pid variable.
+
+  //  pid.Init(0.1,0.0,0.0);
+    pid.Init(0.48,0.0,5.0);
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -57,13 +61,65 @@ int main()
           * NOTE: Feel free to play around with the throttle and speed. Maybe use
           * another PID controller to control the speed!
           */
-          
-          // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
 
           json msgJson;
+          //msgJson["throttle"] =0.4*(1.0-fabs(steer_value));
+
+          if(fabs(cte)<1.8) msgJson["throttle"] =0.4*(1.0-fabs(cte)/1.8);
+          else  msgJson["throttle"] =0;
+
+
+
+        pid.UpdateError(cte);
+        std::cout << " period_index: " <<pid.period_index<< " twiddle_count:"<<pid.twiddle_count<<"  twiddle_mode:"<<pid.twiddle_mode<<" twiddle_param_switch:"<<pid.twiddle_param_switch<<std::endl;
+        steer_value=pid.TotalError();
+        std::cout << "CTE:"<<cte<< "  Steering Value: " << steer_value<<  " Kp: " <<pid.Kp<<"  Kd:"<<pid.Kd<<"  Ki:"<<pid.Ki<<std::endl;
+
+        if(cte*steer_value>0){
+           std::cout << " positive feedback occurs " <<std::endl;
+           steer_value=cte>0?0.0:0.1;
+        }
+
+
+        if(fabs(cte)>2.8||speed<0.1 && pid.is_twiddle_on)
+        {
+
+            std::string reset_msg = "42[\"reset\",{}]";
+            ws.send(reset_msg.data(), reset_msg.length(), uWS::OpCode::TEXT);
+            //steer_value=-0.3;
+            //msgJson["throttle"] =0.0;
+
+            if(fabs(cte)>2.8)
+            std::cout << "RESET PID: too high CTE occurs " <<std::endl;
+
+           //std::cout << " Kp: " <<pid.Kp<<"  Kd:"<<pid.Kd<<"  Ki:"<<pid.Ki<<std::endl;
+
+           //pid.Init(pid.Kp+0.1,0.0,pid.Kd+0.1);
+           //if(pid.period_index>300)
+           pid.Twiddle();
+
+
+
+        }
+        if(pid.period_index==pid.period_count)
+        {
+            pid.Twiddle();
+            pid.period_index=0;
+            pid.twiddle_count++;
+            std::cout << "  twiddle_count:"<<pid.twiddle_count<<"  twiddle_mode"<<pid.twiddle_mode
+                         <<"   Kp: " <<pid.Kp<<"  Kd:"<<pid.Kd<<"  Ki:"<<pid.Ki<<std::endl;
+        }
+        if(pid.twiddle_mode==3)
+            std::cout << "final Kp: " << pid.Kp << "   final Ki: " << pid.Ki<<  "    final Kd:" << pid.Kd<<std::endl;
+
+
+          // DEBUG
+          std::cout << "CTE: " << cte << " Steering Value: " << steer_value <<  " Speed: " << speed <<std::endl;
+
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+
+          //msgJson["throttle"] =0.3;
+          //msgJson["throttle"] =0.8*(0.8-fabs(steer_value));
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
